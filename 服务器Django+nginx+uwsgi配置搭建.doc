@@ -1,0 +1,138 @@
+基于阿里云服务器CentOS7 Linux操作系统
+
+
+
+一、安装下c c++相关依赖库
+    sudo yum -y install gcc gcc-c++
+    sudo yum install openssl-devel
+
+
+
+二、部署nginx
+    1、yum install nginx
+    2、启动nginx
+    	service nginx start
+    
+    3、修改nginx的配置文件nginx.conf（默认在 /usr/local/nginx/conf 目录下）
+	server部分	
+
+	server {
+        	listen       80;
+        	server_name  47.105.169.93;
+        	charset      utf-8;
+
+        	# 静态路径相关配置
+        	location /static {
+            		autoindex on;
+            		#root /home/www/test_project/;
+            		alias /home/www/test_project/static;
+        	}
+
+        	location / {
+            		uwsgi_pass 127.0.0.1:9090;
+            		include /usr/local/nginx/conf/uwsgi_params;  #这里我们使用默认文件即可,此处若不指定或指定错误,会出现502错误,uwsgi.log文件中会看到KeyError: 'REQUEST_METHOD'的错误
+            		index index.html index.htm;
+        	}
+    	}
+
+
+
+三、部署uwsgi
+    1、pip install uwsgi
+
+    2、测试uwsgi
+		（1）、新建python文件，test_uwsgi.py
+
+		（2）、写入如下内容：
+		def application(env, start_response):
+    	    	start_response('200 OK', [('Content-Type','text/html')])
+    	    	return [b"Hello UWSGI"]
+
+		（3）、执行以下操作：
+		uwsgi --http :8001 --wsgi-file test-uwsgi.py	
+	
+		（4）、在浏览器上的操作：
+		在地址栏输入你的linux地址:8001 看到浏览器返回文本“Hello UWSGI”那么恭喜，	uwsgi部署完成
+
+   3、uwsgi配置文件
+	在django项目根目录中添加文件  项目名.ini 文件（我是在项目根目录添加的）
+	文件内容如下：
+
+		[uwsgi]
+		#重要重要重要!!!此处的9090端口和之前nginx配置文件需要一致，相当于链接通路
+		socket = 127.0.0.1:9090
+
+		# 指定test_project项目所在路径一般放在/var/www这个目录,避免遇到nginx root权限问题（我的目是/home/www/项目名）
+		chdir = /home/www/项目名称
+
+		# 指定Django's wsgi file
+		wsgi-file = /home/www/django项目/和django同名的文件夹/wsgi.py
+
+		# 最大工作进程 processes
+		processes = 10
+
+		#每个工作进程processes启动后开启线程个数threads
+		threads = 2
+
+		#环境退出时自动清理
+		vacuum = true
+
+		#记录uwsgi日志路径 
+		#daemonize = /var/log/uwsgi.log
+
+
+
+四、部署django开发环境
+    pip install django
+    安装好后将写好的django项目放到比如/home/www/django项目名称
+    修改settings.py文件
+	1、ALLOWED_HOSTS = [""] 改为 ALLOWED_HOSTS = ["*"]
+	2、DEBUG = True 改为 DEBUG = False
+	3、在settings.py文件末尾添加 STATIC_ROOT = os.path.join(BASE_DIR, "static/")
+
+
+
+五、启动服务
+	1、重启nginx
+		service nginx restart
+ 	2、先关闭之前启动的进程
+		killall -9 uwsgi
+	3、执行命令
+		uwsgi --ini /home/www/项目名/项目名.ini
+
+
+
+六、浏览器测试
+	由于nginx中监听的是80端口，所以在你的浏览器直接输入你  linux的服务器ip地址  即可
+
+
+
+PS:
+	如果还是一切配置都正确还是出现了502错误,请查看nginx或uwsgi相关日志
+若出现错误
+
+	"connect() to 127.0.0.1:9090failed (13: Permission denied) while connecting to upstream"
+
+
+	那么是SeLinux问题导致的,执行以下代码方可解决:
+		setsebool -P httpd_can_network_connect 1
+
+
+
+七、补充nginx和uwsgi相关服务的启动和关闭命令
+	service nginx start                     #启动nginx服务
+	service nginx stop                      #关闭nginx服务
+	service nginx restart                   #重启nginx服务
+
+	uwsgi --ini /etc/uwsgi_config.ini       #初始化uwsgi服务
+	uwsgi --stop /etc/uwsgi_config.ini      #停止uwsgi服务
+	uwsgi --reload /etc/uwsgi_config.ini    #重新加载uwsgi服务
+
+	##重启命令可能无效,请尝试先杀死相关进程然后再重启
+	killall -9 nginx                        #kill所有 nginx相关进程
+	killall -9 uwsgi                        #kill所有 uwsgi 相关进程
+
+
+
+
+
